@@ -1,0 +1,8 @@
+#for netstat ifconfig
+yum install net-tools
+
+
+#for python-pip
+
+yum -y install epel-release
+yum -y install python-pip

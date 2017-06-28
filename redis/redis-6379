@@ -1,0 +1,77 @@
+#!/bin/sh
+#set -x
+# redis - Startup script for mongod
+# chkconfig: 35 85 15
+# description: redis manage script
+# processname: redis
+
+source /etc/init.d/functions
+PORT=6379
+EXEC="/usr/local/bin/redis-server"
+CLIEXEC="/usr/local/bin/redis-cli"
+prog="redis-${PORT}"
+redis_conf="/etc/redis/${PORT}.conf"
+PASSWORD=`grep -v -E "^$|^#" ${redis_conf} |grep requirepass|grep -v grep|awk '{print $2}'`
+[ $PASSWORD ] && PASSWORD="-a $PASSWORD"
+
+[ ! -f ${redis_conf} ] && exit 5
+
+pidfile="/var/run/redis_${PORT}.pid"
+lockfile="/var/lock/subsys/${prog}"
+
+start() {
+    
+    [ ! -x ${EXEC} ] && exit 6
+    echo -n "Starting ${prog}:"
+    daemon ${EXEC} ${redis_conf} 2>/dev/null
+    RETVAL=$?
+    echo
+    [ $RETVAL -eq 0 ] && touch ${lockfile}
+    return $RETVAL
+
+}
+
+
+
+
+stop() {
+    
+    echo -n "Stopping ${prog}:"
+    [ `ps -ef|grep ${EXEC}|grep -v grep|wc -l` -gt 0 ]&& $CLIEXEC -p ${PORT} ${PASSWORD} shutdown
+    RETVAL=$?
+    echo
+    [ $RETVAL -eq 0 ] && rm -f ${lockfile}
+    return $RETVAL
+
+}
+
+
+restart() {
+
+   stop
+   start
+
+}
+
+
+case "$1" in
+     start)
+          status ${EXEC} && exit 0
+          $1
+          ;;
+     stop)
+          status ${EXEC} || exit 0
+          $1
+          ;;
+      restart)
+          $1
+          ;;
+      status)
+          $1 ${EXEC}
+          ;;
+      *)
+          echo "Usage: ${0} {start|stop|status|restart}"
+          exit 2
+          ;;
+ 
+  esac
