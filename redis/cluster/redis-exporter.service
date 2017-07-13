@@ -1,0 +1,11 @@
+[Unit]
+Description=Redis Exporter
+
+[Service]
+EnvironmentFile=/opt/yrd_soft/redis/etc/redis_exporter.conf
+ExecStart=/opt/yrd_soft/redis/bin/redis_exporter $OPTIONS
+User=redis
+Group=redis
+
+[Install]
+WantedBy=multi-user.target

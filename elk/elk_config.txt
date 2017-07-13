@@ -1,0 +1,47 @@
+discovery.zen.ping.unicast.hosts: ["10.134.82.11:9300", "10.134.82.11:9301", "10.134.82.12:9300", "10.134.82.12:9301", "10.134.82.13:9300", "10.134.82.13:9301","10.134.82.14:9300", "10.134.82.14:9301","10.134.82.15:9300","10.134.82.15:9301","10.134.82.15:9302","10.134.82.16:9300","10.134.82.16:9301","10.134.82.16:9302"]
+
+
+
+
+
+
+while read line;do echo $line;scp /opt/yrd_src/jdk-8u131-linux-x64.rpm $line:/opt/yrd_src/;done <list
+
+
+
+
+
+
+
+
+
+
+
+内核参数优化：
+echo "vm.max_map_count=262144" >>/etc/sysctl.conf 或 sysctl -w vm.max_map_count=262144
+sysctl -w vm.max_map_count=262144
+cp /etc/security/limits.conf /etc/security/limits.conf.bak
+cat /etc/security/limits.conf | grep -v "elk" > /tmp/system_limits.conf
+echo "elk hard nofile 65536" >> /tmp/system_limits.conf 
+echo "elk soft nofile 65536" >> /tmp/system_limits.conf 
+mv /tmp/system_limits.conf /etc/security/limits.conf
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+启动命名例子:
+su - elk -s /bin/sh -c "/opt/yrd_soft/esmaster-01-master-node/bin/elasticsearch -d"

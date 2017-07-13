@@ -1,0 +1,466 @@
+set requirepass xxxxxxx
+config set masterauth xxxxxxx   (for cluster or slave) 
+config rewrite
+
+
+
+
+
+
+
+
+info commandstats
+命令会告诉你整个redis执行了哪些命令、分别执行了多少次、总计耗时、平均每次耗时等信息，同时可以通过config resetstat命令来重置统计
+
+
+slowlog get
+通常我们可以通过redis慢日志来找到引起redis慢的命令，用法为slowlog get 10来查看最慢的10条命令，然后针对性的进行优化
+
+
+client list
+redis-cli -h localhost -p 6379 client list | grep -v "omem=0"这条命令在排查redis慢的时候绝对是神技。一般阻塞的命令都会导致omem不断升高，这条命令能快速找到引起阻塞的命令
+
+
+
+
+cluster info       打印集群的信息
+cluster nodes   列出集群当前已知的所有节点(node)，以及这些节点的相关信息     
+
+
+
+cluster meet <ip> <port>       将ip和port所指定的节点添加到集群当中，让它成为集群的一份子  
+cluster forget <node_id>        从集群中移除node_id指定的节点
+cluster replicate <node_id>   将当前节点设置为node_id指定的节点的从节点
+cluster saveconfig                   将节点的配置文件保存到硬盘里面
+cluster slaves <node_id>       列出该slave节点的master节点
+cluster set-config-epoch        强制设置configEpoch 
+
+cluster addslots <slot> [slot ...]                         将一个或多个槽(slot)指派(assign)给当前节点
+cluster delslots <slot> [slot ...]                          移除一个或多个槽对当前节点的指派 
+cluster flushslots                                                移除指派给当前节点的所有槽，让当前节点变成一个没有指派任何槽的节点 
+cluster setslot <slot> node <node_id>            将槽slot指派给node_id指定的节点，如果槽已经指派给另一个节点，那么先让另一个节点删除该槽，然后再进行指派 
+cluster setslot <slot> migrating <node_id>   将本节点的槽slot迁移到node_id指定的节点中  
+cluster setslot <slot> importing <node_id>   从node_id 指定的节点中导入槽slot到本节点 
+cluster setslot <slot> stable                             取消对槽slot的导入(import)或者迁移(migrate) 
+
+
+cluster keyslot <key>                                       计算键key应该被放置在哪个槽上  
+cluster countkeysinslot <slot>                         返回槽slot目前包含的键值对数量 
+cluster getkeysinslot <slot> <count>              返回count个slot槽中的键
+
+
+cluster myid       返回节点的ID
+cluster slots       返回节点负责的slot
+
+redis集群扩容、缩容
+
+1. 增加空节点(空的主节点)
+    1.1>无论添加主节点还是从节点都要先添加一个空的节点(redis-trib.rb add-node newnode  anyexistsnode)
+        sh-4.1# ./redis-trib.rb add-node   172.19.0.5:6381 172.19.0.2:6379
+            >>> Adding node 172.19.0.5:6381 to cluster 172.19.0.2:6379
+            >>> Performing Cluster Check (using node 172.19.0.2:6379)
+            M: 423097d2dd8a2d847b55b4e6ad0a1d07bf89fafd 172.19.0.2:6379
+               slots:10923-16383 (5461 slots) master
+               1 additional replica(s)
+            S: 7c1ccacac123e2e7177bba5bf5c3cc59e92eb247 172.19.0.3:6380
+               slots: (0 slots) slave
+               replicates c6cd15ce116960e937445e576b88b922a0f3c0ba
+            S: bd105aa7b8199966aee86828f56b53d1371e039d 172.19.0.2:6380
+               slots: (0 slots) slave
+               replicates 423097d2dd8a2d847b55b4e6ad0a1d07bf89fafd
+            M: c6cd15ce116960e937445e576b88b922a0f3c0ba 172.19.0.4:6379
+               slots:0-5460 (5461 slots) master
+               1 additional replica(s)
+            M: b08f12b09034559845739ed2dd79498fcfc4ecf5 172.19.0.3:6379
+               slots:5461-10922 (5462 slots) master
+               1 additional replica(s)
+            S: a9a59f937699a0ecc1f7549933d7d92132b40249 172.19.0.4:6380
+               slots: (0 slots) slave
+               replicates b08f12b09034559845739ed2dd79498fcfc4ecf5
+            [OK] All nodes agree about slots configuration.
+            >>> Check for open slots...
+            >>> Check slots coverage...
+            [OK] All 16384 slots covered.
+            >>> Send CLUSTER MEET to node 172.19.0.5:6381 to make it join the cluster.
+            [OK] New node added correctly.
+
+       sh-4.1# ./redis-cli  cluster nodes
+            7c1ccacac123e2e7177bba5bf5c3cc59e92eb247 172.19.0.3:6380 slave c6cd15ce116960e937445e576b88b922a0f3c0ba 0 1499145935230 5 connected
+            bd105aa7b8199966aee86828f56b53d1371e039d 172.19.0.2:6380 slave 423097d2dd8a2d847b55b4e6ad0a1d07bf89fafd 0 1499145934227 2 connected
+            c6cd15ce116960e937445e576b88b922a0f3c0ba 172.19.0.4:6379 master - 0 1499145934728 5 connected 0-5460
+            b08f12b09034559845739ed2dd79498fcfc4ecf5 172.19.0.3:6379 master - 0 1499145932224 3 connected 5461-10922
+            423097d2dd8a2d847b55b4e6ad0a1d07bf89fafd 172.19.0.2:6379 myself,master - 0 0 1 connected 10923-16383
+            2d0c2efde104a146d3fa9f3caaa7ef469c87705a 172.19.0.5:6381 master - 0 1499145932224 0 connected                                                   #####空节点默认是主节点，但是没有slot.
+            a9a59f937699a0ecc1f7549933d7d92132b40249 172.19.0.4:6380 slave b08f12b09034559845739ed2dd79498fcfc4ecf5 0 1499145933225 6 connected
+
+2. 增加主节点,使用上面增加的空节点172.19.0.5:6381，给它添加slot槽位使其成为真正的主节点
+    2.1>保证空节点已经建立(172.19.0.5:6381)
+    2.2>迁移一些slot给新节点(方便测试迁移100个，并且来自同一个已经存在的主节点)
+        sh-4.1# ./redis-trib.rb  reshard  172.19.0.2:6379
+            >>> Performing Cluster Check (using node 172.19.0.2:6379)
+            M: 423097d2dd8a2d847b55b4e6ad0a1d07bf89fafd 172.19.0.2:6379
+               slots:10923-16383 (5461 slots) master
+               1 additional replica(s)
+            S: 7c1ccacac123e2e7177bba5bf5c3cc59e92eb247 172.19.0.3:6380
+               slots: (0 slots) slave
+               replicates c6cd15ce116960e937445e576b88b922a0f3c0ba
+            S: bd105aa7b8199966aee86828f56b53d1371e039d 172.19.0.2:6380
+               slots: (0 slots) slave
+               replicates 423097d2dd8a2d847b55b4e6ad0a1d07bf89fafd
+            M: c6cd15ce116960e937445e576b88b922a0f3c0ba 172.19.0.4:6379
+               slots:0-5460 (5461 slots) master
+               1 additional replica(s)
+            M: b08f12b09034559845739ed2dd79498fcfc4ecf5 172.19.0.3:6379
+               slots:5461-10922 (5462 slots) master
+               1 additional replica(s)
+            M: 2d0c2efde104a146d3fa9f3caaa7ef469c87705a 172.19.0.5:6381
+               slots: (0 slots) master
+               0 additional replica(s)
+            S: a9a59f937699a0ecc1f7549933d7d92132b40249 172.19.0.4:6380
+               slots: (0 slots) slave
+               replicates b08f12b09034559845739ed2dd79498fcfc4ecf5
+            [OK] All nodes agree about slots configuration.
+            >>> Check for open slots...
+            >>> Check slots coverage...
+            [OK] All 16384 slots covered.
+            How many slots do you want to move (from 1 to 16384)? 100                        ####move 100 
+            What is the receiving node ID? 2d0c2efde104a146d3fa9f3caaa7ef469c87705a          ####新建的节点ID
+            Please enter all the source node IDs.
+              Type 'all' to use all the nodes as source nodes for the hash slots.
+              Type 'done' once you entered all the source nodes IDs.
+            Source node #1:423097d2dd8a2d847b55b4e6ad0a1d07bf89fafd                          ####100个节点来自哪个存在的主节点
+            Source node #2:done                                                              ###done表示选择完成可以开始迁移
+
+            Ready to move 100 slots.
+              Source nodes:
+                M: 423097d2dd8a2d847b55b4e6ad0a1d07bf89fafd 172.19.0.2:6379
+               slots:10923-16383 (5461 slots) master
+               1 additional replica(s)
+              Destination node:
+                M: 2d0c2efde104a146d3fa9f3caaa7ef469c87705a 172.19.0.5:6381
+               slots: (0 slots) master
+               0 additional replica(s)
+              Resharding plan:
+                Moving slot 10923 from 423097d2dd8a2d847b55b4e6ad0a1d07bf89fafd
+                Moving slot 10924 from 423097d2dd8a2d847b55b4e6ad0a1d07bf89fafd
+                ......
+                ......
+                ......
+                Moving slot 11021 from 423097d2dd8a2d847b55b4e6ad0a1d07bf89fafd
+                Moving slot 11022 from 423097d2dd8a2d847b55b4e6ad0a1d07bf89fafd
+            Do you want to proceed with the proposed reshard plan (yes/no)? yes
+                Moving slot 10923 from 172.19.0.2:6379 to 172.19.0.5:6381:
+                Moving slot 10924 from 172.19.0.2:6379 to 172.19.0.5:6381:
+                ......
+                ......
+                Moving slot 11021 from 172.19.0.2:6379 to 172.19.0.5:6381:
+                Moving slot 11022 from 172.19.0.2:6379 to 172.19.0.5:6381:
+                
+            sh-4.1# ./redis-cli  cluster nodes
+                7c1ccacac123e2e7177bba5bf5c3cc59e92eb247 172.19.0.3:6380 slave c6cd15ce116960e937445e576b88b922a0f3c0ba 0 1499146576769 5 connected
+                bd105aa7b8199966aee86828f56b53d1371e039d 172.19.0.2:6380 slave 423097d2dd8a2d847b55b4e6ad0a1d07bf89fafd 0 1499146577772 2 connected
+                c6cd15ce116960e937445e576b88b922a0f3c0ba 172.19.0.4:6379 master - 0 1499146579778 5 connected 0-5460
+                b08f12b09034559845739ed2dd79498fcfc4ecf5 172.19.0.3:6379 master - 0 1499146580781 3 connected 5461-10922
+                423097d2dd8a2d847b55b4e6ad0a1d07bf89fafd 172.19.0.2:6379 myself,master - 0 0 1 connected 11023-16383
+                2d0c2efde104a146d3fa9f3caaa7ef469c87705a 172.19.0.5:6381 master - 0 1499146581782 7 connected 10923-11022                                   ###迁移成功
+                a9a59f937699a0ecc1f7549933d7d92132b40249 172.19.0.4:6380 slave b08f12b09034559845739ed2dd79498fcfc4ecf5 0 1499146578775 6 connected
+            sh-4.1# ./redis-cli  cluster info
+                cluster_state:ok
+                cluster_slots_assigned:16384
+                cluster_slots_ok:16384
+                cluster_slots_pfail:0
+                cluster_slots_fail:0
+                cluster_known_nodes:7
+                cluster_size:4
+                cluster_current_epoch:7
+                cluster_my_epoch:1
+                cluster_stats_messages_sent:5518
+                cluster_stats_messages_received:4360
+                
+3. 增加从节点
+   3.1> 增加从节点的同时不指定是哪一个主节点的从节点
+        ./redis-trib.rb add-node --slave 新的节点 已经存在于集群的节点
+   3.2> 增加从节点的同时，指定是哪一个主节点的从节点
+        sh-4.1# ./redis-trib.rb add-node --slave --master-id 2d0c2efde104a146d3fa9f3caaa7ef469c87705a 172.19.0.5:6380 172.19.0.2:6379
+            >>> Adding node 172.19.0.5:6380 to cluster 172.19.0.2:6379
+            >>> Performing Cluster Check (using node 172.19.0.2:6379)
+            M: 423097d2dd8a2d847b55b4e6ad0a1d07bf89fafd 172.19.0.2:6379
+               slots:11023-16383 (5361 slots) master
+               1 additional replica(s)
+            S: 7c1ccacac123e2e7177bba5bf5c3cc59e92eb247 172.19.0.3:6380
+               slots: (0 slots) slave
+               replicates c6cd15ce116960e937445e576b88b922a0f3c0ba
+            S: bd105aa7b8199966aee86828f56b53d1371e039d 172.19.0.2:6380
+               slots: (0 slots) slave
+               replicates 423097d2dd8a2d847b55b4e6ad0a1d07bf89fafd
+            M: c6cd15ce116960e937445e576b88b922a0f3c0ba 172.19.0.4:6379
+               slots:0-5460 (5461 slots) master
+               1 additional replica(s)
+            M: b08f12b09034559845739ed2dd79498fcfc4ecf5 172.19.0.3:6379
+               slots:5461-10922 (5462 slots) master
+               1 additional replica(s)
+            M: 2d0c2efde104a146d3fa9f3caaa7ef469c87705a 172.19.0.5:6381
+               slots:10923-11022 (100 slots) master
+               0 additional replica(s)
+            S: a9a59f937699a0ecc1f7549933d7d92132b40249 172.19.0.4:6380
+               slots: (0 slots) slave
+               replicates b08f12b09034559845739ed2dd79498fcfc4ecf5
+            [OK] All nodes agree about slots configuration.
+            >>> Check for open slots...
+            >>> Check slots coverage...
+            [OK] All 16384 slots covered.
+            >>> Send CLUSTER MEET to node 172.19.0.5:6380 to make it join the cluster.
+            Waiting for the cluster to join.
+            >>> Configure node as replica of 172.19.0.5:6381.
+            [OK] New node added correctly.
+            sh-4.1# ./redis-cli  cluster nodes
+            4ff20071b5ffbdffddbdc7ba950e340b7771f41e 172.19.0.5:6380 slave 2d0c2efde104a146d3fa9f3caaa7ef469c87705a 0 1499147572168 7 connected
+            7c1ccacac123e2e7177bba5bf5c3cc59e92eb247 172.19.0.3:6380 slave c6cd15ce116960e937445e576b88b922a0f3c0ba 0 1499147573169 5 connected
+            bd105aa7b8199966aee86828f56b53d1371e039d 172.19.0.2:6380 slave 423097d2dd8a2d847b55b4e6ad0a1d07bf89fafd 0 1499147574171 2 connected
+            c6cd15ce116960e937445e576b88b922a0f3c0ba 172.19.0.4:6379 master - 0 1499147571165 5 connected 0-5460
+            b08f12b09034559845739ed2dd79498fcfc4ecf5 172.19.0.3:6379 master - 0 1499147572669 3 connected 5461-10922
+            423097d2dd8a2d847b55b4e6ad0a1d07bf89fafd 172.19.0.2:6379 myself,master - 0 0 1 connected 11023-16383
+            2d0c2efde104a146d3fa9f3caaa7ef469c87705a 172.19.0.5:6381 master - 0 1499147569162 7 connected 10923-11022
+            a9a59f937699a0ecc1f7549933d7d92132b40249 172.19.0.4:6380 slave b08f12b09034559845739ed2dd79498fcfc4ecf5 0 1499147570165 6 connected
+            sh-4.1# ./redis-cli  cluster info
+            cluster_state:ok
+            cluster_slots_assigned:16384
+            cluster_slots_ok:16384
+            cluster_slots_pfail:0
+            cluster_slots_fail:0
+            cluster_known_nodes:8
+            cluster_size:4
+            cluster_current_epoch:7
+            cluster_my_epoch:1
+            cluster_stats_messages_sent:7150
+            cluster_stats_messages_received:5992
+
+            
+4. 上面1，2，3可以理解为redis-cluster集群扩容的过程，接下来介绍缩容过程
+    4.1> 把需要拿掉的主节点上的slot分片迁移走,这里仍然选择把刚刚加上去的172.19.0.5:6381 的100个slot "还给" 172.19.0.2.:6379
+        sh-4.1# ./redis-trib.rb   reshard  172.19.0.2:6379
+            >>> Performing Cluster Check (using node 172.19.0.2:6379)
+            M: 423097d2dd8a2d847b55b4e6ad0a1d07bf89fafd 172.19.0.2:6379
+               slots:11023-16383 (5361 slots) master
+               1 additional replica(s)
+            S: 4ff20071b5ffbdffddbdc7ba950e340b7771f41e 172.19.0.5:6380
+               slots: (0 slots) slave
+               replicates 2d0c2efde104a146d3fa9f3caaa7ef469c87705a
+            S: 7c1ccacac123e2e7177bba5bf5c3cc59e92eb247 172.19.0.3:6380
+               slots: (0 slots) slave
+               replicates c6cd15ce116960e937445e576b88b922a0f3c0ba
+            S: bd105aa7b8199966aee86828f56b53d1371e039d 172.19.0.2:6380
+               slots: (0 slots) slave
+               replicates 423097d2dd8a2d847b55b4e6ad0a1d07bf89fafd
+            M: c6cd15ce116960e937445e576b88b922a0f3c0ba 172.19.0.4:6379
+               slots:0-5460 (5461 slots) master
+               1 additional replica(s)
+            M: b08f12b09034559845739ed2dd79498fcfc4ecf5 172.19.0.3:6379
+               slots:5461-10922 (5462 slots) master
+               1 additional replica(s)
+            M: 2d0c2efde104a146d3fa9f3caaa7ef469c87705a 172.19.0.5:6381
+               slots:10923-11022 (100 slots) master
+               1 additional replica(s)
+            S: a9a59f937699a0ecc1f7549933d7d92132b40249 172.19.0.4:6380
+               slots: (0 slots) slave
+               replicates b08f12b09034559845739ed2dd79498fcfc4ecf5
+            [OK] All nodes agree about slots configuration.
+            >>> Check for open slots...
+            >>> Check slots coverage...
+            [OK] All 16384 slots covered.
+            How many slots do you want to move (from 1 to 16384)? 100
+            What is the receiving node ID? 423097d2dd8a2d847b55b4e6ad0a1d07bf89fafd                 ###接收方172.19.0.2::6379
+            Please enter all the source node IDs.
+              Type 'all' to use all the nodes as source nodes for the hash slots.       
+              Type 'done' once you entered all the source nodes IDs.                    
+            Source node #1:2d0c2efde104a146d3fa9f3caaa7ef469c87705a                                  ###要拿掉的节点172.19.0.5:6381
+            Source node #2:done
+
+            Ready to move 100 slots.
+              Source nodes:
+                M: 2d0c2efde104a146d3fa9f3caaa7ef469c87705a 172.19.0.5:6381
+               slots:10923-11022 (100 slots) master
+               1 additional replica(s)
+              Destination node:
+                M: 423097d2dd8a2d847b55b4e6ad0a1d07bf89fafd 172.19.0.2:6379
+               slots:11023-16383 (5361 slots) master
+               1 additional replica(s)
+              Resharding plan:
+                Moving slot 10923 from 2d0c2efde104a146d3fa9f3caaa7ef469c87705a
+                ......
+                ......
+                Moving slot 11020 from 2d0c2efde104a146d3fa9f3caaa7ef469c87705a
+                Moving slot 11021 from 2d0c2efde104a146d3fa9f3caaa7ef469c87705a
+                Moving slot 11022 from 2d0c2efde104a146d3fa9f3caaa7ef469c87705a
+            Do you want to proceed with the proposed reshard plan (yes/no)? yes
+                Moving slot 10923 from 172.19.0.5:6381 to 172.19.0.2:6379:
+                Moving slot 10924 from 172.19.0.5:6381 to 172.19.0.2:6379:
+                ......
+                ......
+                Moving slot 11021 from 172.19.0.5:6381 to 172.19.0.2:6379:
+                Moving slot 11022 from 172.19.0.5:6381 to 172.19.0.2:6379:
+        sh-4.1# ./redis-cli  cluster nodes
+            4ff20071b5ffbdffddbdc7ba950e340b7771f41e 172.19.0.5:6380 slave 423097d2dd8a2d847b55b4e6ad0a1d07bf89fafd 0 1499151261122 8 connected             ###这里很有意思，原来172.19.0.5:6380是172.19.0.5:6381的从节点，随着slot移除，从节点换了主人了......
+            7c1ccacac123e2e7177bba5bf5c3cc59e92eb247 172.19.0.3:6380 slave c6cd15ce116960e937445e576b88b922a0f3c0ba 0 1499151256112 5 connected
+            bd105aa7b8199966aee86828f56b53d1371e039d 172.19.0.2:6380 slave 423097d2dd8a2d847b55b4e6ad0a1d07bf89fafd 0 1499151261124 8 connected
+            c6cd15ce116960e937445e576b88b922a0f3c0ba 172.19.0.4:6379 master - 0 1499151260121 5 connected 0-5460
+            b08f12b09034559845739ed2dd79498fcfc4ecf5 172.19.0.3:6379 master - 0 1499151258618 3 connected 5461-10922
+            423097d2dd8a2d847b55b4e6ad0a1d07bf89fafd 172.19.0.2:6379 myself,master - 0 0 8 connected 10923-16383
+            2d0c2efde104a146d3fa9f3caaa7ef469c87705a 172.19.0.5:6381 master - 0 1499151258118 7 connected                                                   ###172.19.0.5:6381主节点已经没有slot了
+            a9a59f937699a0ecc1f7549933d7d92132b40249 172.19.0.4:6380 slave b08f12b09034559845739ed2dd79498fcfc4ecf5 0 1499151259119 6 connected
+        
+        4.2> 移除迁移数据后的172.19.0.5:6381
+            sh-4.1# ./redis-trib.rb del-node 172.19.0.5:6381 2d0c2efde104a146d3fa9f3caaa7ef469c87705a
+                >>> Removing node 2d0c2efde104a146d3fa9f3caaa7ef469c87705a from cluster 172.19.0.5:6381
+                >>> Sending CLUSTER FORGET messages to the cluster...
+                >>> SHUTDOWN the node.
+                sh-4.1#
+                sh-4.1#
+                sh-4.1# ./redis-cli  cluster info
+                cluster_state:ok
+                cluster_slots_assigned:16384
+                cluster_slots_ok:16384
+                cluster_slots_pfail:0
+                cluster_slots_fail:0
+                cluster_known_nodes:7
+                cluster_size:3
+                cluster_current_epoch:8
+                cluster_my_epoch:8
+                cluster_stats_messages_sent:26011
+                cluster_stats_messages_received:24852
+                sh-4.1# ./redis-cli  cluster nodes              ###172.19.0.5:6381没了,,再次成为自由状态的主节点
+                4ff20071b5ffbdffddbdc7ba950e340b7771f41e 172.19.0.5:6380 slave 423097d2dd8a2d847b55b4e6ad0a1d07bf89fafd 0 1499155356909 8 connected
+                7c1ccacac123e2e7177bba5bf5c3cc59e92eb247 172.19.0.3:6380 slave c6cd15ce116960e937445e576b88b922a0f3c0ba 0 1499155358913 5 connected
+                bd105aa7b8199966aee86828f56b53d1371e039d 172.19.0.2:6380 slave 423097d2dd8a2d847b55b4e6ad0a1d07bf89fafd 0 1499155357913 8 connected
+                c6cd15ce116960e937445e576b88b922a0f3c0ba 172.19.0.4:6379 master - 0 1499155354904 5 connected 0-5460
+                b08f12b09034559845739ed2dd79498fcfc4ecf5 172.19.0.3:6379 master - 0 1499155352900 3 connected 5461-10922
+                423097d2dd8a2d847b55b4e6ad0a1d07bf89fafd 172.19.0.2:6379 myself,master - 0 0 8 connected 10923-16383
+                a9a59f937699a0ecc1f7549933d7d92132b40249 172.19.0.4:6380 slave b08f12b09034559845739ed2dd79498fcfc4ecf5 0 1499155355907 6 connected
+            
+        
+        4.3> 移除叛变的从节点.....
+            sh-4.1# ./redis-trib.rb del-node   172.19.0.5:6380  4ff20071b5ffbdffddbdc7ba950e340b7771f41e
+                >>> Removing node 4ff20071b5ffbdffddbdc7ba950e340b7771f41e from cluster 172.19.0.5:6380
+                >>> Sending CLUSTER FORGET messages to the cluster...
+                >>> SHUTDOWN the node.
+                sh-4.1# ./redis-cli  cluster nodes          #######172.19.0.5:6380,叛徒没了,
+                7c1ccacac123e2e7177bba5bf5c3cc59e92eb247 172.19.0.3:6380 slave c6cd15ce116960e937445e576b88b922a0f3c0ba 0 1499155390983 5 connected
+                bd105aa7b8199966aee86828f56b53d1371e039d 172.19.0.2:6380 slave 423097d2dd8a2d847b55b4e6ad0a1d07bf89fafd 0 1499155389980 8 connected
+                c6cd15ce116960e937445e576b88b922a0f3c0ba 172.19.0.4:6379 master - 0 1499155388977 5 connected 0-5460
+                b08f12b09034559845739ed2dd79498fcfc4ecf5 172.19.0.3:6379 master - 0 1499155391986 3 connected 5461-10922
+                423097d2dd8a2d847b55b4e6ad0a1d07bf89fafd 172.19.0.2:6379 myself,master - 0 0 8 connected 10923-16383
+                a9a59f937699a0ecc1f7549933d7d92132b40249 172.19.0.4:6380 slave b08f12b09034559845739ed2dd79498fcfc4ecf5 0 1499155386970 6 connected
+                
+                
+=======================tip:  
+节点移除后：
+1.节点动态生成的集群配置仍是其 活着时候的状态........ 
+2.节点stop(shutdown) 
+3.为了下次正常使用，在重新启动前需要删除动态生成的集群配置
+4.下面用到了......
+==================================
+
+
+5. 使用cluster-migration-barrier 1 实现高可用
+
+==============场景========================
+集群中一个节点的master挂掉，从节点提升为主节点，
+但是，还没有来的急给这个新的主节点加从节点，这个新的主节点就又挂掉了，那么集群中这个节点就彻底不可以用了.
+为了解决这个问题，我们至少保证有一个节点的maser下面有两个以上的从节点，
+配合使用cluster-migration-barrier参数，
+当其他节点的master下没有可用的从库时，有多个从库的master会割让一个slave给他，保证整个集群的可用性。
+=============================
+
+    5.1> 登录172.19.0.5把172.19.0.5:6380节点给到 192.17.0.2:6379
+        sh-4.1# ./redis-cli -p 6380
+        127.0.0.1:6380> cluster replicate 423097d2dd8a2d847b55b4e6ad0a1d07bf89fafd                          #####把当前节点分给ID为423097d2dd8a2d847b55b4e6ad0a1d07bf89fafd的节点（ 172.19.0.2:6379）
+        OK
+        127.0.0.1:6380> cluster nodes
+        7c1ccacac123e2e7177bba5bf5c3cc59e92eb247 172.19.0.3:6380 slave c6cd15ce116960e937445e576b88b922a0f3c0ba 0 1499162693649 5 connected
+        3fbb842f6379a2be40a2b02ba5acdca6b7906512 172.19.0.5:6380 myself,slave 423097d2dd8a2d847b55b4e6ad0a1d07bf89fafd 0 0 9 connected              ##### 172.19.0.2:6379的新的从节点
+        423097d2dd8a2d847b55b4e6ad0a1d07bf89fafd 172.19.0.2:6379 master - 0 1499162691643 8 connected 10923-16383
+        bd105aa7b8199966aee86828f56b53d1371e039d 172.19.0.2:6380 slave 423097d2dd8a2d847b55b4e6ad0a1d07bf89fafd 0 1499162696657 8 connected         ##### 172.19.0.2:6379原来的节点
+        c6cd15ce116960e937445e576b88b922a0f3c0ba 172.19.0.4:6379 master - 0 1499162695152 5 connected 0-5460
+        a9a59f937699a0ecc1f7549933d7d92132b40249 172.19.0.4:6380 slave b08f12b09034559845739ed2dd79498fcfc4ecf5 0 1499162692645 3 connected
+        8c8dea3839a33d88075180a69665f9b0c0eab03a 172.19.0.5:6381 master - 0 1499162694650 0 connected                                                   
+        b08f12b09034559845739ed2dd79498fcfc4ecf5 172.19.0.3:6379 master - 0 1499162695655 3 connected 5461-10922
+    
+    5.2> 模拟172.19.0.3:6379的从节点172.19.0.4:6380  由于xxx原因shutdown了
+        sh-4.1# ./redis-cli -p 6380 shutdown
+        
+    5.3 > 查看172.19.0.3:6379日志
+        sh-4.1# tail -f /var/log/redis_6379.log
+            43:M 04 Jul 18:01:29.133 * Full resync requested by slave 172.19.0.4:6380
+            43:M 04 Jul 18:01:29.133 * Starting BGSAVE for SYNC with target: disk
+            43:M 04 Jul 18:01:29.134 * Background saving started by pid 46
+            46:C 04 Jul 18:01:29.142 * DB saved on disk
+            46:C 04 Jul 18:01:29.142 * RDB: 0 MB of memory used by copy-on-write
+            43:M 04 Jul 18:01:29.218 * Background saving terminated with success
+            43:M 04 Jul 18:01:29.219 * Synchronization with slave 172.19.0.4:6380 succeeded
+            43:M 04 Jul 18:01:30.143 # Failover auth denied to a9a59f937699a0ecc1f7549933d7d92132b40249: its master is up
+            43:M 04 Jul 18:01:56.515 * Clear FAIL state for node 423097d2dd8a2d847b55b4e6ad0a1d07bf89fafd: is reachable again and nobody is serving its slots after some time.
+            43:M 04 Jul 18:01:56.515 # Cluster state changed: ok
+      #######################################172.19.0.4:6380  由于xxx原因shutdown了##########################################
+            43:M 04 Jul 18:10:24.195 # Connection with slave 172.19.0.4:6380 lost.
+            43:M 04 Jul 18:10:40.746 * Marking node a9a59f937699a0ecc1f7549933d7d92132b40249 as failing (quorum reached).   #########确认宕机了。。。。
+            43:M 04 Jul 18:10:46.644 * Slave 172.19.0.5:6380 asks for synchronization                                       #########本来是172.19.0.2:6379从节点的172.19.0.5:6380，申请作为172.19.0.3:6379的从节点（为了满足cluster-migration-barrier 1）
+            43:M 04 Jul 18:10:46.644 * Full resync requested by slave 172.19.0.5:6380                                       #########全量复制一波
+            43:M 04 Jul 18:10:46.644 * Starting BGSAVE for SYNC with target: disk                                           #########172.19.0.3:6379把自己数据持久化一波
+            43:M 04 Jul 18:10:46.644 * Background saving started by pid 50
+            50:C 04 Jul 18:10:46.648 * DB saved on disk
+            50:C 04 Jul 18:10:46.648 * RDB: 0 MB of memory used by copy-on-write
+            43:M 04 Jul 18:10:46.718 * Background saving terminated with success
+            43:M 04 Jul 18:10:46.719 * Synchronization with slave 172.19.0.5:6380 succeeded
+
+            
+    5.4 > 查看172.19.0.5:6380日志，与  172.19.0.3:6379日志对应
+            3855:S 04 Jul 18:10:40.747 * FAIL message received from b08f12b09034559845739ed2dd79498fcfc4ecf5 about a9a59f937699a0ecc1f7549933d7d92132b40249
+            3855:S 04 Jul 18:10:45.839 # Migrating to orphaned master b08f12b09034559845739ed2dd79498fcfc4ecf5
+            3855:S 04 Jul 18:10:45.839 # Connection with master lost.
+            3855:S 04 Jul 18:10:45.839 * Caching the disconnected master state.
+            3855:S 04 Jul 18:10:45.840 * Discarding previously cached master state.
+            3855:S 04 Jul 18:10:46.643 * Connecting to MASTER 172.19.0.3:6379
+            3855:S 04 Jul 18:10:46.643 * MASTER <-> SLAVE sync started
+            3855:S 04 Jul 18:10:46.643 * Non blocking connect for SYNC fired the event.
+            3855:S 04 Jul 18:10:46.643 * Master replied to PING, replication can continue...
+            3855:S 04 Jul 18:10:46.644 * Partial resynchronization not possible (no cached master)
+            3855:S 04 Jul 18:10:46.644 * Full resync from master: 62cb1d0a4bd41c993c8eebe55a37f49b8cdf1c50:785
+            3855:S 04 Jul 18:10:46.719 * MASTER <-> SLAVE sync: receiving 109 bytes from master
+            3855:S 04 Jul 18:10:46.719 * MASTER <-> SLAVE sync: Flushing old data
+            3855:S 04 Jul 18:10:46.719 * MASTER <-> SLAVE sync: Loading DB in memory
+            3855:S 04 Jul 18:10:46.719 * MASTER <-> SLAVE sync: Finished with success
+            3855:S 04 Jul 18:10:46.720 * Background append only file rewriting started by pid 3874
+            3855:S 04 Jul 18:10:46.751 * AOF rewrite child asks to stop sending diffs.
+            3874:C 04 Jul 18:10:46.751 * Parent agreed to stop sending diffs. Finalizing AOF...
+            3874:C 04 Jul 18:10:46.751 * Concatenating 0.00 MB of AOF diff received from parent.
+            3874:C 04 Jul 18:10:46.751 * SYNC append only file rewrite performed
+            3874:C 04 Jul 18:10:46.753 * AOF rewrite: 0 MB of memory used by copy-on-write
+            3855:S 04 Jul 18:10:46.844 * Background AOF rewrite terminated with success
+            3855:S 04 Jul 18:10:46.844 * Residual parent diff successfully flushed to the rewritten AOF (0.00 MB)
+            3855:S 04 Jul 18:10:46.844 * Background AOF rewrite finished successfully
+            sh-4.1#
+
+    5.5 >查看现在的cluster nodes状态
+            127.0.0.1:6380> cluster nodes
+                7c1ccacac123e2e7177bba5bf5c3cc59e92eb247 172.19.0.3:6380 slave c6cd15ce116960e937445e576b88b922a0f3c0ba 0 1499163044532 5 connected
+                3fbb842f6379a2be40a2b02ba5acdca6b7906512 172.19.0.5:6380 myself,slave b08f12b09034559845739ed2dd79498fcfc4ecf5 0 0 9 connected                                                  #####成功叛变
+                423097d2dd8a2d847b55b4e6ad0a1d07bf89fafd 172.19.0.2:6379 master - 0 1499163042524 8 connected 10923-16383
+                bd105aa7b8199966aee86828f56b53d1371e039d 172.19.0.2:6380 slave 423097d2dd8a2d847b55b4e6ad0a1d07bf89fafd 0 1499163045033 8 connected
+                c6cd15ce116960e937445e576b88b922a0f3c0ba 172.19.0.4:6379 master - 0 1499163045535 5 connected 0-5460
+                a9a59f937699a0ecc1f7549933d7d92132b40249 172.19.0.4:6380 slave,fail b08f12b09034559845739ed2dd79498fcfc4ecf5 1499163024236 1499163022432 3 disconnected                         #####由于xxx原因shutdown了
+                8c8dea3839a33d88075180a69665f9b0c0eab03a 172.19.0.5:6381 master - 0 1499163047548 0 connected
+                b08f12b09034559845739ed2dd79498fcfc4ecf5 172.19.0.3:6379 master - 0 1499163046544 3 connected 5461-10922
+
+    5.6 >恢复172.19.0.4:6380，并查看状态
+         sh-4.1# ./redis-server   ../conf/redis-6380.conf
+         sh-4.1# ./redis-cli -p 6380
+         127.0.0.1:6380> CLUSTER NODES
+            7c1ccacac123e2e7177bba5bf5c3cc59e92eb247 172.19.0.3:6380 slave c6cd15ce116960e937445e576b88b922a0f3c0ba 0 1499165114978 5 connected
+            3fbb842f6379a2be40a2b02ba5acdca6b7906512 172.19.0.5:6380 myself,slave b08f12b09034559845739ed2dd79498fcfc4ecf5 0 0 9 connected
+            423097d2dd8a2d847b55b4e6ad0a1d07bf89fafd 172.19.0.2:6379 master - 0 1499165113977 8 connected 10923-16383
+            bd105aa7b8199966aee86828f56b53d1371e039d 172.19.0.2:6380 slave 423097d2dd8a2d847b55b4e6ad0a1d07bf89fafd 0 1499165116480 8 connected
+            c6cd15ce116960e937445e576b88b922a0f3c0ba 172.19.0.4:6379 master - 0 1499165118988 5 connected 0-5460
+            a9a59f937699a0ecc1f7549933d7d92132b40249 172.19.0.4:6380 slave b08f12b09034559845739ed2dd79498fcfc4ecf5 0 1499165117985 3 connected                                                 ######又好了                              
+            8c8dea3839a33d88075180a69665f9b0c0eab03a 172.19.0.5:6381 master - 0 1499165118486 0 connected
+            b08f12b09034559845739ed2dd79498fcfc4ecf5 172.19.0.3:6379 master - 0 1499165119991 3 connected 5461-10922
+

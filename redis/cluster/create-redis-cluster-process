@@ -1,0 +1,87 @@
+=========>>>过程展示 && 检查集群状态
+    [root@ovz-ops-redis-cluster-01 ~]# cd /opt/yrd_soft/redis/bin/
+    [root@ovz-ops-redis-cluster-01 bin]# su redis -s /bin/sh -c "./redis-trib.rb create --replicas 1 10.134.80.36:6379 10.134.80.56:6379 10.134.80.72:6379 10.134.80.92:6379 10.134.80.36:7379 10.134.80.56:7379 10.134.80.72:7379 10.134.80.92:7379"
+    >>> Creating cluster
+    >>> Performing hash slots allocation on 8 nodes...
+    Using 4 masters:
+    10.134.80.36:6379
+    10.134.80.56:6379
+    10.134.80.72:6379
+    10.134.80.92:6379
+    Adding replica 10.134.80.56:7379 to 10.134.80.36:6379
+    Adding replica 10.134.80.36:7379 to 10.134.80.56:6379
+    Adding replica 10.134.80.92:7379 to 10.134.80.72:6379
+    Adding replica 10.134.80.72:7379 to 10.134.80.92:6379
+    M: f565e4d2a99d12c7290642ae58d701558c84960f 10.134.80.36:6379
+       slots:0-4095 (4096 slots) master
+    M: 726f9a9b88af2dbbc58c5df1c19e5d7d06635e57 10.134.80.56:6379
+       slots:4096-8191 (4096 slots) master
+    M: a98ac654263a1c170c31f70c9bfb613e14aa5406 10.134.80.72:6379
+       slots:8192-12287 (4096 slots) master
+    M: b52356d419600eaf2482410422694a43815df773 10.134.80.92:6379
+       slots:12288-16383 (4096 slots) master
+    S: 47e60c109fa528f225d59eafd99a2ca512250d60 10.134.80.36:7379
+       replicates 726f9a9b88af2dbbc58c5df1c19e5d7d06635e57
+    S: e136ebc8968ac81830b3814a40d2ffde580d7027 10.134.80.56:7379
+       replicates f565e4d2a99d12c7290642ae58d701558c84960f
+    S: c3ab8cc6e76bbf6f7840b20986a310081d327711 10.134.80.72:7379
+       replicates b52356d419600eaf2482410422694a43815df773
+    S: 0d0254fe2b1cc615340d2420336535e31587ff5c 10.134.80.92:7379
+       replicates a98ac654263a1c170c31f70c9bfb613e14aa5406
+    Can I set the above configuration? (type 'yes' to accept): yes
+    >>> Nodes configuration updated
+    >>> Assign a different config epoch to each node
+    >>> Sending CLUSTER MEET messages to join the cluster
+    Waiting for the cluster to join...
+    >>> Performing Cluster Check (using node 10.134.80.36:6379)
+    M: f565e4d2a99d12c7290642ae58d701558c84960f 10.134.80.36:6379
+       slots:0-4095 (4096 slots) master
+       1 additional replica(s)
+    M: b52356d419600eaf2482410422694a43815df773 10.134.80.92:6379
+       slots:12288-16383 (4096 slots) master
+       1 additional replica(s)
+    S: 0d0254fe2b1cc615340d2420336535e31587ff5c 10.134.80.92:7379
+       slots: (0 slots) slave
+       replicates a98ac654263a1c170c31f70c9bfb613e14aa5406
+    S: 47e60c109fa528f225d59eafd99a2ca512250d60 10.134.80.36:7379
+       slots: (0 slots) slave
+       replicates 726f9a9b88af2dbbc58c5df1c19e5d7d06635e57
+    S: e136ebc8968ac81830b3814a40d2ffde580d7027 10.134.80.56:7379
+       slots: (0 slots) slave
+       replicates f565e4d2a99d12c7290642ae58d701558c84960f
+    M: 726f9a9b88af2dbbc58c5df1c19e5d7d06635e57 10.134.80.56:6379
+       slots:4096-8191 (4096 slots) master
+       1 additional replica(s)
+    M: a98ac654263a1c170c31f70c9bfb613e14aa5406 10.134.80.72:6379
+       slots:8192-12287 (4096 slots) master
+       1 additional replica(s)
+    S: c3ab8cc6e76bbf6f7840b20986a310081d327711 10.134.80.72:7379
+       slots: (0 slots) slave
+       replicates b52356d419600eaf2482410422694a43815df773
+    [OK] All nodes agree about slots configuration.
+    >>> Check for open slots...
+    >>> Check slots coverage...
+    [OK] All 16384 slots covered.
+    [root@ovz-ops-redis-cluster-01 bin]# ./redis-cli -h 10.134.80.36 -p 7379  cluster nodes
+    b52356d419600eaf2482410422694a43815df773 10.134.80.92:6379 master - 0 1499060309761 4 connected 12288-16383
+    c3ab8cc6e76bbf6f7840b20986a310081d327711 10.134.80.72:7379 slave b52356d419600eaf2482410422694a43815df773 0 1499060309761 7 connected
+    0d0254fe2b1cc615340d2420336535e31587ff5c 10.134.80.92:7379 slave a98ac654263a1c170c31f70c9bfb613e14aa5406 0 1499060309761 8 connected
+    e136ebc8968ac81830b3814a40d2ffde580d7027 10.134.80.56:7379 slave f565e4d2a99d12c7290642ae58d701558c84960f 0 1499060310262 6 connected
+    47e60c109fa528f225d59eafd99a2ca512250d60 10.134.80.36:7379 myself,slave 726f9a9b88af2dbbc58c5df1c19e5d7d06635e57 0 0 5 connected
+    f565e4d2a99d12c7290642ae58d701558c84960f 10.134.80.36:6379 master - 0 1499060309260 1 connected 0-4095
+    726f9a9b88af2dbbc58c5df1c19e5d7d06635e57 10.134.80.56:6379 master - 0 1499060310764 2 connected 4096-8191
+    a98ac654263a1c170c31f70c9bfb613e14aa5406 10.134.80.72:6379 master - 0 1499060310262 3 connected 8192-12287
+    [root@ovz-ops-redis-cluster-01 bin]# ./redis-cli -h 10.134.80.92 -p 7379 -a GIkSWImS5LCkJA  cluster info
+    cluster_state:ok
+    cluster_slots_assigned:16384
+    cluster_slots_ok:16384
+    cluster_slots_pfail:0
+    cluster_slots_fail:0
+    cluster_known_nodes:8
+    cluster_size:4
+    cluster_current_epoch:8
+    cluster_my_epoch:3
+    cluster_stats_messages_sent:4920
+    cluster_stats_messages_received:4920
+    
+=========>>>过程展示 && 检查集群状态
